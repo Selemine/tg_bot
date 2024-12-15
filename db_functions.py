@@ -2,8 +2,6 @@ from datetime import datetime
 import sqlite3
 import logging
 
-
-# Настройка логирования
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 
@@ -13,21 +11,18 @@ def create_tables():
 
     logger.debug("Создание таблиц, если они не существуют")
     
-    # Удаление старой таблицы marks, если она существует
-    cursor.execute("DROP TABLE IF EXISTS marks")
-
-    # Создание новой таблицы marks с правильной схемой
     cursor.execute(""" 
         CREATE TABLE IF NOT EXISTS marks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student TEXT,
             subject TEXT,
+            teacher_name TEXT,
+            group_number TEXT,  
             date TEXT,
             mark INTEGER
         )
     """)
     
-    # Остальные таблицы остаются без изменений
     cursor.execute(""" 
         CREATE TABLE IF NOT EXISTS groups (
             group_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,6 +68,7 @@ def create_tables():
     conn.close()
 
 
+
 def create_group(group_number, leader_name):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
@@ -82,7 +78,6 @@ def create_group(group_number, leader_name):
         conn.commit()
         logger.debug(f"Группа {group_number} успешно создана с лидером {leader_name}")
 
-        # Добавление старосты в таблицу members
         logger.debug(f"Попытка добавления старосты {leader_name} в таблицу members для группы {group_number}")
         cursor.execute("INSERT INTO members (member_name, group_number) VALUES (?, ?)", (leader_name, group_number))
         conn.commit()
@@ -141,7 +136,6 @@ def add_group_to_subject(group_number, subject_name):
         logger.error(f"Ошибка при добавлении группы к дисциплине: {e}")
     finally:
         conn.close()
-
 
 def get_teacher_by_subject(subject_name):
     conn = sqlite3.connect("database.db")
@@ -297,8 +291,7 @@ check_table_exists()
 def get_subjects_for_group(group_number):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
-    
-    # Получаем все дисциплины, к которым группа присоединилась
+
     query = """
         SELECT subject_name
         FROM group_subjects
@@ -313,15 +306,11 @@ def get_subjects_for_group(group_number):
     return [subject[0] for subject in subjects]
 
 def get_subjects_by_teacher(teacher_name):
-    """Возвращает список дисциплин, созданных определённым преподавателем."""
-    # Получаем все дисциплины и преподавателей
     all_subjects_with_teachers = get_all_subjects_with_teachers()
-    # Отфильтровываем только дисциплины, привязанные к указанному преподавателю
     subjects = [subject for subject, teacher in all_subjects_with_teachers if teacher == teacher_name]
     return subjects
 
 def get_groups_by_subject(subject_name):
-    """Возвращает список групп, присоединенных к заданной дисциплине."""
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
     try:
@@ -346,17 +335,15 @@ def get_students_by_group(group_number):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
     try:
-        logger.info(f"Извлечение студентов для группы: {group_number}")  # Логирование входных данных
+        logger.info(f"Извлечение студентов для группы: {group_number}")  
         cursor.execute("SELECT member_name FROM members WHERE group_number = ?", (group_number,))
         students = cursor.fetchall()
-
-        # Логирование результатов запроса
         if not students:
             logger.warning(f"Для группы {group_number} не найдено студентов.")
         else:
             logger.info(f"Найдено студентов: {len(students)}. Список: {[student[0] for student in students]}")
 
-        return [student[0] for student in students]  # Возвращаем список имен студентов
+        return [student[0] for student in students]  
     except sqlite3.Error as e:
         logger.error(f"Ошибка при извлечении студентов для группы {group_number}: {e}")
         return []
@@ -369,7 +356,6 @@ def mark_student(student_name, mark):
     cursor = conn.cursor()
 
     try:
-        # Получаем текущую дату
         current_date = datetime.now().strftime('%Y-%m-%d')
 
         cursor.execute("""
@@ -384,42 +370,114 @@ def mark_student(student_name, mark):
     finally:
         conn.close()
 
-
 def save_mark(student_name, subject, mark):
     try:
-        # Получаем текущую дату в формате YYYY-MM-DD
         current_date = datetime.now().strftime('%Y-%m-%d')
-
-        # Открытие соединения с базой данных
         connection = sqlite3.connect('database.db')
         cursor = connection.cursor()
-
-        # Выполнение запроса на сохранение оценки с датой
         cursor.execute("""
             INSERT INTO marks (student, subject, date, mark) 
             VALUES (?, ?, ?, ?)
         """, (student_name, subject, current_date, mark))
-
-        # Сохранение изменений
         connection.commit()
         connection.close()
         logger.debug(f"Оценка {mark} для студента {student_name} по предмету {subject} успешно сохранена с датой {current_date}.")
     except Exception as e:
         logger.error(f"Ошибка при сохранении оценки для студента {student_name}: {e}")
 
-
 def add_student_column_if_needed():
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
-
-    # Проверяем, существует ли столбец 'student' в таблице 'marks'
     cursor.execute("PRAGMA table_info(marks)")
     columns = cursor.fetchall()
-    
-    # Если столбца 'student' нет, добавляем его
     if not any(col[1] == 'student' for col in columns):
         logger.debug("Столбец 'student' отсутствует. Добавляем его в таблицу 'marks'.")
         cursor.execute("ALTER TABLE marks ADD COLUMN student TEXT")
         conn.commit()
     
     conn.close()
+
+def get_student_grades(student_name):
+    conn = sqlite3.connect("database.db")
+    cursor = conn.cursor()
+    try:
+        logger.debug(f"Запрос оценок для студента: {student_name}")
+        cursor.execute("SELECT subject, date, mark FROM marks WHERE student = ?", (student_name,))
+        grades = cursor.fetchall()
+        logger.debug(f"Найдено оценок для студента {student_name}: {grades}")
+        return grades  
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при получении оценок для студента {student_name}: {e}")
+        return []
+    finally:
+        conn.close()
+
+def get_group_subjects_with_grades(group_number):
+    conn = sqlite3.connect("database.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT subject_name, student, mark, date 
+        FROM marks 
+        WHERE group_number = ?
+    """, (group_number,))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    if not rows:
+        return []
+    
+    subjects_with_grades = {}
+    for subject, student, mark, date in rows:
+        if subject not in subjects_with_grades:
+            subjects_with_grades[subject] = []
+        subjects_with_grades[subject].append({
+            'student': student,
+            'mark': mark,
+            'date': date
+        })
+    
+    return subjects_with_grades
+
+def get_marks_for_subject(subject, group=None, student_name=None):
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+        logger.debug(f"Запрос оценок по предмету {subject} для студента {student_name}")
+        
+        if student_name:
+            query = """
+                SELECT date, mark
+                FROM marks
+                WHERE subject = ? AND student = ?
+                ORDER BY date DESC
+            """
+            cursor.execute(query, (subject, student_name))
+        elif group:
+            query = """
+                SELECT date, mark
+                FROM marks
+                WHERE subject = ? AND group_number = ?
+                ORDER BY date DESC
+            """
+            cursor.execute(query, (subject, group))
+        else:
+            query = """
+                SELECT date, mark
+                FROM marks
+                WHERE subject = ?
+                ORDER BY date DESC
+            """
+            cursor.execute(query, (subject,))
+        
+        marks_info = cursor.fetchall()
+        conn.close()
+
+        if not marks_info:
+            logger.debug("Оценки не найдены.")
+            return None
+        return [{"date": mark[0], "mark": mark[1]} for mark in marks_info]
+
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка при выполнении запроса к базе данных: {e}")
+        return None
