@@ -1,0 +1,38 @@
+// Database Schema
+digraph {
+	groups [label=groups]
+	groups -> groups_group_id
+	groups -> groups_group_number
+	groups -> groups_leader_name
+	sqlite_sequence [label=sqlite_sequence]
+	sqlite_sequence -> sqlite_sequence_name
+	sqlite_sequence -> sqlite_sequence_seq
+	members [label=members]
+	members -> members_member_id
+	members -> members_group_number
+	members -> members_member_name
+	subjects [label=subjects]
+	subjects -> subjects_subject_id
+	subjects -> subjects_subject_name
+	subjects -> subjects_teacher_name
+	group_subjects [label=group_subjects]
+	group_subjects -> group_subjects_id
+	group_subjects -> group_subjects_group_number
+	group_subjects -> group_subjects_subject_name
+	teachers [label=teachers]
+	teachers -> teachers_teacher_name
+	teachers -> teachers_chat_id
+	student_marks [label=student_marks]
+	student_marks -> student_marks_student_name
+	student_marks -> student_marks_mark
+	students [label=students]
+	students -> students_student_name
+	students -> students_chat_id
+	marks [label=marks]
+	marks -> marks_id
+	marks -> marks_student
+	marks -> marks_subject
+	marks -> marks_teacher_name
+	marks -> marks_date
+	marks -> marks_mark
+}

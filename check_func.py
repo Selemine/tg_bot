@@ -8,8 +8,6 @@ logger = logging.getLogger()
 
 def get_student_marks():
 
-
-
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
     cursor.execute("PRAGMA table_info(marks)")
@@ -57,8 +55,40 @@ def get_student_marks():
     finally:
         conn.close()
 
+
 def main():
     get_student_marks()
 
 if __name__ == "__main__":
     main()
+
+
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################
+
+# all data 
+
+# import sqlite3
+
+# def print_table(cursor, table_name):
+#     print(f"Таблица: {table_name}")
+#     cursor.execute(f"SELECT * FROM {table_name}")
+#     rows = cursor.fetchall()
+#     for row in rows:
+#         print(row)
+#     print("\n" + "="*50 + "\n")
+# def main():
+#     conn = sqlite3.connect("database.db")
+#     cursor = conn.cursor()
+#     table_names = ['marks', 'groups', 'members', 'subjects', 'group_subjects', 'teachers', 'student_marks']
+#     for table_name in table_names:
+#         print_table(cursor, table_name)
+#     conn.close()
+# if __name__ == "__main__":
+#     main()
+
+
+##################################################################################################################################################
+##################################################################################################################################################
+##################################################################################################################################################

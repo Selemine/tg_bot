@@ -67,7 +67,9 @@ def create_tables():
     conn.commit()
     conn.close()
 
-
+def connect_to_database():
+    """Подключение к базе данных SQLite."""
+    return sqlite3.connect('database.db')  # Укажите путь к вашей базе данных
 
 def create_group(group_number, leader_name):
     conn = sqlite3.connect("database.db")

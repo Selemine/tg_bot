@@ -6,7 +6,6 @@ import hashlib
 import db_functions
 import os
 
-
 #таблицы перед запуском бота
 db_functions.create_tables()
 
@@ -27,11 +26,21 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("telegram.ext").setLevel(logging.WARNING)
 
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+
 # стартовое сообщение
 async def start(update: Update, context):
+    # Сброс состояния и данных пользователя
+    context.user_data.clear()
     print(" Функция start ")
     logger.info("Пользователь начал работу с ботом.")
-    await update.message.reply_text("👋  Пожалуйста, введите ваше ФИО:", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("👋 Пожалуйста, введите ваше ФИО:", reply_markup=ReplyKeyboardRemove())
     return ASK_NAME
 
 async def ask_name(update: Update, context):
@@ -110,15 +119,15 @@ async def enter_code(update: Update, context):
             return ENTER_GROUP
 
         elif user_status == '👩‍🏫 Преподаватель':
+            await update.message.reply_text(f"Вы успешно вошли как {user_status}.\nВаше ФИО: {full_name}")
             await update.message.reply_text("Выберите действие:",
                                             reply_markup=ReplyKeyboardMarkup([
-                                            ['📚 Добавить дисциплину', '📅 Провести занятие'],
-                                            ['1234']
+                                            ['📚 Добавить дисциплину', '📅 Провести занятие']
                                             ], resize_keyboard=True))
             return MAIN_MENU
 
         return ConversationHandler.END
-    
+
     # неверный код
     await update.message.reply_text("❌ Неверный код! Попробуйте снова или вернитесь назад:",
                                     reply_markup=ReplyKeyboardMarkup([['◀️']], resize_keyboard=True))
@@ -417,6 +426,18 @@ async def cancel(update: Update, context):
     await update.message.reply_text("❌ Операция отменена.")
     return ConversationHandler.END
 
+async def save_subject(update: Update, context):
+    print(" Функция save_subject ")
+    subject_name = update.message.text
+    teacher_name = context.user_data['full_name']
+    db_functions.add_subject(subject_name, teacher_name)
+    await update.message.reply_text(f"✅ Дисциплина '{subject_name}' успешно добавлена.")
+    await update.message.reply_text("Выберите действие:",
+                                            reply_markup=ReplyKeyboardMarkup([
+                                            ['📚 Добавить дисциплину', '📅 Провести занятие'],
+                                            ], resize_keyboard=True))
+    return MAIN_MENU
+
 async def navigate_student(update: Update, context, direction):
     query = update.callback_query
     await query.answer()  # Подтверждение обработки
@@ -546,68 +567,50 @@ async def handle_marking(update: Update, context):
         reply_markup=keyboard
     )
 
-async def main_menu_teacher(update: Update, context):
-    print("Функция main_menu_teacher")
+async def conduct_class(update: Update, context):
+    print("Функция conduct_class")
     text = update.message.text
-
     if text == "📚 Добавить дисциплину":
-        print("нажал на 📚 Добавить дисциплину")
-        await update.message.reply_text("Введите название новой дисциплины:")
+        print("Добавление дисциплины")
+        await query.edit_message_text("Введите название новой дисциплины:")
         return CREATE_SUBJECT
+    # Определяем, откуда пришел запрос: от кнопки или текстового сообщения
+    query = update.callback_query
+    message = update.message
 
-    elif text == "🔍 Посмотреть оценки":
-        await update.message.reply_text("Функция по просмотру оценок пока не реализована.")
-        return MAIN_MENU
+    if query:  # Если запрос пришел от инлайн-кнопки
+        await query.answer()
+        parts = query.data.split("_", 1)
+        if len(parts) < 2:
+            await query.edit_message_text("⚠️ Ошибка: не указана дисциплина.")
+            return MAIN_MENU
 
-    elif text == "📅 Провести занятие":
-        print("нажал на 📅 Провести занятие")
+        subject = parts[1]
+        context.user_data['selected_subject'] = subject
+        print(f"Дисциплина сохранена в контексте: {subject}")
+        return await select_class_subject(update, context)
+
+    elif message:  # Если запрос пришел от текстового сообщения
         teacher_name = context.user_data.get('full_name', 'Преподаватель')
         subjects = db_functions.get_subjects_by_teacher(teacher_name)
 
         if not subjects:
-            await update.message.reply_text("❌ У вас нет добавленных дисциплин. Пожалуйста, сначала добавьте дисциплину.")
+            await message.reply_text("❌ У вас нет добавленных дисциплин. Пожалуйста, сначала добавьте дисциплину.")
             return MAIN_MENU
 
-        await conduct_class(update, context)
+        keyboard = [
+            [InlineKeyboardButton(subject, callback_data=f"conduct_{subject}")] for subject in subjects
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await message.reply_text(
+            "Выберите дисциплину для проведения занятия:",
+            reply_markup=reply_markup
+        )
         return SELECT_SUBJECT_FOR_PAIR
 
-    await update.message.reply_text("⚠️ Выберите действие из меню.")
-    return MAIN_MENU
-
-async def save_subject(update: Update, context):
-    print(" Функция save_subject ")
-    subject_name = update.message.text
-    teacher_name = context.user_data['full_name']
-    db_functions.add_subject(subject_name, teacher_name)
-    await update.message.reply_text(f"✅ Дисциплина '{subject_name}' успешно добавлена.")
-    await update.message.reply_text("Выберите действие:",
-                                            reply_markup=ReplyKeyboardMarkup([
-                                            ['📚 Добавить дисциплину', '📅 Провести занятие'],
-                                            ['🔍 Посмотреть оценки']
-                                            ], resize_keyboard=True))
-    return MAIN_MENU
-
-async def conduct_class(update: Update, context):
-    print("Функция conduct_class")
-    teacher_name = context.user_data['full_name']
-    subjects = sorted(db_functions.get_subjects_by_teacher(teacher_name))
-
-    if not subjects:
-        await update.message.reply_text("❌ У вас нет добавленных дисциплин.")
-        return MAIN_MENU
-
-    keyboard = [
-        [InlineKeyboardButton(subject, callback_data=f"conduct_{subject}")] for subject in subjects
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        "Выберите дисциплину для проведения занятия:",
-        reply_markup=reply_markup
-    )
-    return SELECT_SUBJECT_FOR_PAIR
-
 async def select_class_subject(update: Update, context):
-    print(" Функция select_class_subject ")
+    print("Функция select_class_subject")
     query = update.callback_query
     await query.answer()
     selected_subject = query.data.split("_", 1)[1]
@@ -627,16 +630,18 @@ async def select_class_subject(update: Update, context):
     context.user_data['selected_groups'] = []
 
     await query.edit_message_text(
-        "Выберите группу для проведения занятия:",
-        reply_markup=InlineKeyboardMarkup(group_buttons)
+        f"Дисциплина: <b>{selected_subject}</b>\n\nВыберите группы для проведения занятия:",
+        reply_markup=InlineKeyboardMarkup(group_buttons),
+        parse_mode="HTML"
     )
     return CHOOSE_GROUP  # хз по другому не робило, в падлу думать как сделать как и остлаьное 
 
 async def toggle_group_selection(update: Update, context):
-    print(" Функция toggle_group_selection ")
+    print("Функция toggle_group_selection")
     query = update.callback_query
     await query.answer()
     callback_data = query.data
+    current_message = query.message.text
 
     if callback_data.startswith("group_"):
         group_name = callback_data.split("_")[1]
@@ -646,23 +651,25 @@ async def toggle_group_selection(update: Update, context):
             selected_groups.remove(group_name)
         else:
             selected_groups.append(group_name)
-
         context.user_data['selected_groups'] = selected_groups
-
-        # отображение списка выбранных групп
         selected_text = "\n".join([f"<i>{group}</i>" for group in selected_groups]) if selected_groups else "<i>Нет выбранных групп.</i>"
-        await query.edit_message_text(
-            f"Выбранные группы:\n\n{selected_text}",
-            reply_markup=query.message.reply_markup,
-            parse_mode="HTML"
-        )
+        print(f"Текущий текст сообщения: {current_message}")
+        print(f"Новый текст сообщения: {selected_text}")
+        if "Выбранные группы:" not in current_message:
+            print("Сообщение с группами не было обновлено, обновляем.")
+            await query.edit_message_text(
+                f"Выбранные группы:\n\n{selected_text}",
+                reply_markup=query.message.reply_markup,
+                parse_mode="HTML"
+            )
+        else:
+            print("Сообщение с группами уже обновлено, не обновляем.")
 
     elif callback_data == "confirm":
-        # подтверждение групп
         selected_groups = context.user_data.get('selected_groups', [])
         if not selected_groups:
             await query.answer("⚠️ Вы не выбрали ни одной группы!")
-            return 
+            return
 
         selected_groups_text = "<i>" + "</i>, <i>".join(selected_groups) + "</i>"
         await query.edit_message_text(
@@ -671,9 +678,8 @@ async def toggle_group_selection(update: Update, context):
             parse_mode="HTML"
         )
         await start_marking_students(query, context)
-  
+
     elif callback_data == "back_to_subjects":
-        # возврат к выбору дисциплины
         teacher_name = context.user_data.get('full_name')
         subjects = db_functions.get_subjects_by_teacher(teacher_name)
 
@@ -691,6 +697,7 @@ async def toggle_group_selection(update: Update, context):
         )
 
         return SELECT_SUBJECT_FOR_PAIR
+
     return CHOOSE_GROUP
 
 def generate_student_id(student_name):
@@ -717,7 +724,7 @@ def generate_student_keyboard(student_id):
     return InlineKeyboardMarkup(keyboard)
 
 async def start_marking_students(query: Update, context):
-    print(" Функция start_marking_students ")
+    print("Функция start_marking_students")
     selected_groups = context.user_data.get('selected_groups', [])
     if not selected_groups:
         await query.edit_message_text("⚠️ Нет выбранных групп для проведения занятия.")
@@ -742,7 +749,15 @@ async def start_marking_students(query: Update, context):
     selected_marks = context.user_data.get('marks', {})
     keyboard = generate_student_keyboard(generate_student_id(student_name))
     mark_text = selected_marks.get(student_name, "")
-    await query.edit_message_text(
+    
+    # Удаляем предыдущее сообщение перед отправкой нового
+    try:
+        await query.delete_message()
+    except Exception as e:
+        print(f"Не удалось удалить сообщение: {e}")
+    
+    # Отправляем новое сообщение
+    await query.message.reply_text(
         f"Группа: <b>{group_number}</b>\n\n<i>{student_name}</i> {mark_text}",
         reply_markup=keyboard,
         parse_mode="HTML"
@@ -751,6 +766,7 @@ async def start_marking_students(query: Update, context):
     
     # Добавим кнопку завершения занятия
     await show_finish_button(query, context)  # Эта функция должна отображать кнопку завершения занятия
+
 
 async def show_finish_button(update: Update, context):
     print(" Функция show_finish_button ")
@@ -761,9 +777,14 @@ async def show_finish_button(update: Update, context):
     await update.message.reply_text("Для завершения занятия нажмите кнопку ниже:", reply_markup=finish_keyboard)
 
 async def cancel_finish_session(update: Update, context):
-    print(" Функция cancel_finish_session ")
+    print("Функция cancel_finish_session")
     query = update.callback_query
     await query.answer()
+
+    # Редактируем текущее сообщение, удаляя старое сообщение с подтверждением
+    await query.edit_message_text("Завершение занятия отменено.")
+
+    # Отправляем новые кнопки для продолжения
     await show_finish_button(query, context)
 
 async def handle_finish_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -781,54 +802,125 @@ async def handle_finish_session(update: Update, context: ContextTypes.DEFAULT_TY
         reply_markup=confirm_keyboard
     )
 
-async def confirm_finish_session(update: Update, context):
-    print("Функция confirm_finish_session")
-    query = update.callback_query
-    await query.answer()
-    selected_marks = context.user_data.get('marks', {})
-    selected_subject = context.user_data.get('selected_subject')
-    for student, mark in selected_marks.items():
-        db_functions.save_mark(student, selected_subject, mark)
-    context.user_data.clear()
-    await query.edit_message_text("✅ Занятие завершено. Оценки сохранены.")
-    text = query.message.text 
+async def main_menu_teacher(update: Update, context):
+    print("Функция main_menu_teacher")
 
+    context.user_data.pop('session_finished', None)
+
+    if update.message:
+        text = update.message.text
+        reply_method = update.message.reply_text
+        print(f"1) Обработка текстового сообщения: {text}")
+    elif update.callback_query:
+        text = update.callback_query.data
+        reply_method = update.callback_query.message.reply_text
+        print(f"2) Обработка callback-запроса: {text}")
+        if context.user_data.get('session_finished', False):
+            print("Занятие завершено. Переключаемся на текстовые сообщения.")
+            await update.callback_query.answer("Занятие завершено. Переключаемся на текстовые сообщения.")
+            keyboard = [
+                ["📚 Добавить дисциплину"], ["📅 Провести занятие"]
+            ]
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            await reply_method(
+                reply_markup=reply_markup
+            )
+            return  
+
+    else:
+        print("3) Нет сообщения или callback-запроса")
+        return
     if text == "📚 Добавить дисциплину":
-        print("нажал на 📚 Добавить дисциплину")
-        await update.message.reply_text("Введите название новой дисциплины:")
+        print("Добавление дисциплины")
+        await reply_method("Введите название новой дисциплины:")
         return CREATE_SUBJECT
+
     elif text == "📅 Провести занятие":
-        print("нажал на 📅 Провести занятие")
+        print("Провести занятие")
         teacher_name = context.user_data.get('full_name', 'Преподаватель')
         subjects = db_functions.get_subjects_by_teacher(teacher_name)
 
         if not subjects:
-            await update.message.reply_text("❌ У вас нет добавленных дисциплин. Пожалуйста, сначала добавьте дисциплину.")
+            await reply_method("❌ У вас нет добавленных дисциплин. Пожалуйста, сначала добавьте дисциплину.")
             return MAIN_MENU
 
-        await conduct_class(update, context)
-        return SELECT_SUBJECT_FOR_PAIR
-        
-    else:
-        await query.message.reply_text(
-            "Выберите действие:",
-            reply_markup=ReplyKeyboardMarkup(
-                [
-                    ['📚 Добавить дисциплину', '📅 Провести занятие'],
-                    ['🔍 Посмотреть оценки']
-                ],
-                resize_keyboard=True
-            )
+        return await conduct_class(update, context)
+    
+    return MAIN_MENU
+
+async def confirm_finish_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("Функция confirm_finish_session")
+    query = update.callback_query
+    await query.answer()
+
+    # Сохраняем оценки в базе данных
+    selected_marks = context.user_data.get('marks', {})
+    selected_subject = context.user_data.get('selected_subject')
+    for student, mark in selected_marks.items():
+        db_functions.save_mark(student, selected_subject, mark)
+
+    # Очистка пользовательских данных
+    context.user_data.pop('marks', None)
+    context.user_data.pop('selected_groups', None)
+    context.user_data.pop('selected_subject', None)
+
+    # Удаление сообщения с отметками студентов
+    try:
+        await query.delete_message()
+        print("чёта")
+    except Exception as e:
+        print(f"Не удалось удалить сообщение с отметками студентов: {e}")
+
+    # Отправка сообщения о завершении занятия
+    await query.message.reply_text(
+        "✅ Занятие завершено. Оценки сохранены.",
+        reply_markup=ReplyKeyboardMarkup(
+            [
+                ['📚 Добавить дисциплину', '📅 Провести занятие'],
+            ],
+            resize_keyboard=True
         )
-        return MAIN_MENU  
+    )
+
+    # Пометка о завершении сессии
+    context.user_data['session_finished'] = True
+    
+    return await main_menu_teacher(update, context)
+
+
+
+async def handle_text(update: Update, context):
+    print("Функция handle_text")
+    text = update.message.text
+    print(f"Обработка текстового сообщения: {text}")
+
+    current_state = context.user_data.get("current_state", MAIN_MENU)
+
+    if current_state == MAIN_MENU:
+        if text == "📚 Добавить дисциплину":
+            await update.message.reply_text("Введите название новой дисциплины:")
+            context.user_data["current_state"] = CREATE_SUBJECT
+            return
+
+        elif text == "📅 Провести занятие":
+            context.user_data["current_state"] = SELECT_SUBJECT_FOR_PAIR
+            return await conduct_class(update, context)
+           
+    elif current_state == CREATE_SUBJECT:
+        subject_name = text
+        db_functions.add_subject(subject_name, context.user_data['full_name'])
+        await update.message.reply_text(f"Дисциплина '{subject_name}' успешно добавлена!")
+        context.user_data["current_state"] = MAIN_MENU
+        await main_menu_teacher(update, context)
+        return
 
 def main():
-
+    
     application = ApplicationBuilder().token("7500268240:AAEtuPOniFFCnaHSW55eUfe392egvxDONWU").build()
-    application.add_handler(MessageHandler(filters.Regex('^🔍 Посмотреть оценки$'), view_grades)) # выводит неверную дату 
+    application.add_handler(MessageHandler(filters.Regex('^🔍 Посмотреть оценки$'), view_grades)) 
     application.add_handler(CallbackQueryHandler(view_grades_detail, pattern=r"^view_grades_.*"))
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[CommandHandler("start", start)], 
         states={
             ASK_NAME: [MessageHandler(filters.TEXT, ask_name)],
             CHOOSE_STATUS: [MessageHandler(filters.TEXT, choose_status)],
@@ -840,7 +932,8 @@ def main():
             PROCESS_FILE: [MessageHandler(filters.Document.ALL, process_file)],
             CONFIRM_GROUP: [MessageHandler(filters.TEXT, confirm_group_action)],
             MAIN_MENU: [
-                MessageHandler(filters.TEXT, main_menu_teacher),
+
+                MessageHandler(filters.TEXT & ~filters.COMMAND, main_menu_teacher),
                 MessageHandler(filters.Regex('^📚 Добавить дисциплину$'), save_subject),
                 MessageHandler(filters.Regex('^📅 Провести занятие$'), conduct_class),
             ],
@@ -852,14 +945,20 @@ def main():
                 CallbackQueryHandler(select_subject_for_join)    # сука из-за этого ничё не работало, какой идиот убрал?
             ],
             CREATE_SUBJECT: [MessageHandler(filters.TEXT, save_subject)],
-            SELECT_SUBJECT_FOR_PAIR: [CallbackQueryHandler(select_class_subject, pattern="^conduct_")],
-            CONDUCT_A_LESSON: [MessageHandler(filters.TEXT, conduct_class)],
-            CHOOSE_GROUP: [CallbackQueryHandler(toggle_group_selection)],
+            SELECT_SUBJECT_FOR_PAIR: [
+                CallbackQueryHandler(select_class_subject, pattern="^conduct_")
+            ],
+            CONDUCT_A_LESSON: [MessageHandler(filters.TEXT, conduct_class, )],
+            CHOOSE_GROUP: [
+                CallbackQueryHandler(toggle_group_selection)
+            ],
             MARK_STUDENT: [MessageHandler(filters.TEXT, start_marking_students)],
             },
-        fallbacks=[CommandHandler("cancel", cancel)]
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CommandHandler("start", start)
+]
     )
-    # обработка подтверждения или отклонения запроса преподавателем
     application.add_handler(CallbackQueryHandler(handle_teacher_response, pattern="^(approve_|reject_)"))
     application.add_handler(CallbackQueryHandler(handle_marking, pattern=r"mark_\w+_\w+"))
     application.add_handler(CallbackQueryHandler(lambda u, c: navigate_student(u, c, -1), pattern="^prev_student$"))
@@ -870,6 +969,9 @@ def main():
     application.add_handler(CallbackQueryHandler(confirm_finish_session, pattern="^confirm_finish$"))
     application.add_handler(CallbackQueryHandler(cancel_finish_session, pattern="^cancel_finish$"))
     application.add_handler(conv_handler)
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    application.add_handler(CallbackQueryHandler(confirm_finish_session, pattern="confirm_finish"))
     application.run_polling()
 
 if __name__ == "__main__":
